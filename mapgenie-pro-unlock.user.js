@@ -5,7 +5,7 @@
 // @description  PRO-функции MapGenie без подписки: метки, заметки, пресеты и профили хранятся только в localStorage, с импортом/экспортом
 // @author       Void Emptiness
 // @match        https://mapgenie.io/*
-// @icon         https://cdn.mapgenie.io/favicons/mapgenie/favicon-32x32.png
+// @icon         https://cdn.mapgenie.io/favicons/mapgenie/favicon-96x96.png
 // @grant        none
 // @run-at       document-start
 // ==/UserScript==
@@ -25,6 +25,39 @@
     window.__mgLocalCore = true;
     var STORE_KEY = 'mg_local_data_v2';
     var UNLIMITED = 1e9;
+    var isGuidePage = /\/guides(\/|$)/.test(location.pathname);
+    var isMiniMap = false;
+    try { isMiniMap = new URLSearchParams(location.search).get('mini') === 'true'; } catch (e) {}
+    var guideFoundRef = null;
+    var guideInitialized = false;
+
+    if (isGuidePage) {
+      try {
+        var _guideFound = {};
+        guideFoundRef = _guideFound;
+        Object.defineProperty(window, 'foundLocations', {
+          configurable: true,
+          enumerable: true,
+          get: function () { return _guideFound; },
+          set: function (v) {
+            if (v && typeof v === 'object') {
+              Object.keys(v).forEach(function (k) { _guideFound[k] = v[k]; });
+            }
+          }
+        });
+      } catch (e) {
+        if (!window.foundLocations || typeof window.foundLocations !== 'object') window.foundLocations = {};
+        guideFoundRef = window.foundLocations;
+      }
+      ['isPro', 'isLoggedIn'].forEach(function (flag) {
+        try {
+          Object.defineProperty(window, flag, { configurable: true, enumerable: true, get: function () { return true; }, set: function () {} });
+        } catch (e) { window[flag] = true; }
+      });
+      try {
+        Object.defineProperty(window, 'maxFoundLocations', { configurable: true, enumerable: true, get: function () { return UNLIMITED; }, set: function () {} });
+      } catch (e) { window.maxFoundLocations = UNLIMITED; }
+    }
 
 
     function emptyDb() {
@@ -595,7 +628,8 @@
         '#mg-local-panel button:hover{background:#35354a}',
         '#mg-local-panel button.mg-danger{color:#ff9c9c;border-color:#5a3a3a}',
         '#mg-local-panel .mg-stats{padding:4px 2px 2px;opacity:.75;font-size:11px}',
-        '#mg-local-panel .mg-log{max-height:78px;overflow:auto;opacity:.7;font-size:11px;margin-top:4px;white-space:pre-wrap}'
+        '#mg-local-panel .mg-log{max-height:78px;overflow:auto;opacity:.7;font-size:11px;margin-top:4px;white-space:pre-wrap}',
+        '.guide .check[data-location-id]:checked::after{left:0 !important;top:0 !important;right:0 !important;bottom:0 !important;display:flex !important;align-items:center !important;justify-content:center !important;width:auto !important;height:auto !important;margin:0 !important;padding:0 !important;font-size:18px !important;line-height:1 !important;background:none !important;border:none !important;box-shadow:none !important}'
       ].join('\n');
       var style = document.createElement('style');
       style.id = 'mg-local-style';
@@ -736,6 +770,7 @@
 
     function buildPanel() {
       if (panel || !document.body) return;
+      if (isMiniMap || window.top !== window.self) return;
       var existing = document.getElementById('mg-local-panel');
       if (existing) { panel = existing; return; }
       panel = document.createElement('div');
@@ -813,6 +848,72 @@
     }
 
 
+    function guideExtractLocationId(row) {
+      if (!row) return null;
+      var link = row.querySelector ? (row.querySelector('a.location-link') || row.querySelector('td.location-link-wrapper a') || row.querySelector('a[href*="locationIds="]')) : null;
+      if (!link) return null;
+      var m = (link.getAttribute('href') || '').match(/locationIds=(\d+)/);
+      return m ? m[1] : null;
+    }
+
+    function guideFixCheckboxes() {
+      if (!isGuidePage) return;
+      var boxes = document.querySelectorAll('.check');
+      for (var i = 0; i < boxes.length; i++) {
+        var cb = boxes[i];
+        if (!cb.getAttribute('data-location-id')) {
+          var row = (cb.closest ? (cb.closest('tr') || cb.closest('.guide-item') || cb.parentElement) : cb.parentElement);
+          var id = guideExtractLocationId(row);
+          if (id) cb.setAttribute('data-location-id', id);
+        }
+        cb.removeAttribute('disabled');
+        cb.removeAttribute('aria-label');
+        cb.removeAttribute('data-balloon-pos');
+        cb.removeAttribute('data-balloon-length');
+        var id2 = cb.getAttribute('data-location-id');
+        var checked = !!(id2 && guideFoundRef && guideFoundRef[id2]);
+        cb.checked = checked;
+        var rowEl = cb.closest ? cb.closest('tr') : null;
+        if (rowEl) {
+          if (checked) rowEl.classList.add('found'); else rowEl.classList.remove('found');
+        }
+      }
+      var label = document.getElementById('guide-hide-found-locations-checkbox-label');
+      if (label && guideFoundRef) {
+        label.textContent = 'Hide Found Items (' + Object.keys(guideFoundRef).length + ')';
+      }
+    }
+
+    function guideTryInit() {
+      if (!isGuidePage || guideInitialized) return;
+      var iframe = document.querySelector('iframe[src*="/maps/"]');
+      var cw = iframe && iframe.contentWindow;
+      if (!cw || !cw.game || !cw.mapData) {
+        setTimeout(guideTryInit, 300);
+        return;
+      }
+      try { window.game = cw.game; } catch (e) {}
+      try { window.mapData = cw.mapData; } catch (e) { mapDataRef = cw.mapData; }
+      var pid = activeProfile();
+      var found = locationsFor(pid);
+      var target = guideFoundRef || window.foundLocations;
+      if (target) {
+        Object.keys(target).forEach(function (k) { delete target[k]; });
+        Object.keys(found).forEach(function (k) { target[k] = k; });
+      }
+      guideFixCheckboxes();
+      guideInitialized = true;
+    }
+
+    function scheduleGuideInit() {
+      if (!isGuidePage) return;
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', function () { setTimeout(guideTryInit, 100); }, { once: true });
+      } else {
+        setTimeout(guideTryInit, 100);
+      }
+    }
+
     function installHooks() {
       if (window.__mgLocalHooks) return;
       window.__mgLocalHooks = true;
@@ -824,6 +925,7 @@
 
     installHooks();
     schedulePanel(1200);
+    if (isGuidePage) scheduleGuideInit();
 
     var lastPath = location.pathname;
     function onNavigate() {
