@@ -15,9 +15,9 @@ UserScript для [mapgenie.io](https://mapgenie.io/), который разбл
 ## Установка
 
 1. Установите расширение [ViolentMonkey](https://violentmonkey.github.io/) (Chrome/Firefox/Edge).
-2. Откройте файл `mapgenie-pro-unlock.user.js` из этого репозитория.
+2. Установите скрипт с [GreasyFork](https://greasyfork.org/ru/scripts/606950-mapgenie-local-pro-violentmonkey) или напрямую с этого репозитория [тык](https://github.com/VoidEmptiness/MapGenie-Local-PRO/raw/main/mapgenie-pro-unlock.user.js)
 3. ViolentMonkey предложит установить скрипт — подтвердите.
-4. Откройте любую карту на mapgenie.io (например, Elden Ring).
+4. Откройте любую карту на mapgenie.io (например, [Sniper Elite 4](https://mapgenie.io/sniper-elite-4/maps/italia)).
 
 Скрипт запускается на `@run-at document-start` и работает в контексте страницы (grant `none`).
 
